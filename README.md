@@ -1,4 +1,4 @@
-GamingAnywhere
+GamingAnywhere (updated)(compile on ubuntu 2204)
 ==============
 
 GamingAnywhere: An Open Cloud Gaming System
