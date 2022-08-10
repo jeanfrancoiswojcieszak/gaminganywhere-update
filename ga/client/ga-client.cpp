@@ -168,13 +168,21 @@ create_overlay(struct RTSPThreadParam *rtspParam, int ch) {
 	}
 	// pipeline
 	snprintf(pipename, sizeof(pipename), "channel-%d", ch);
-	if((pipe = dpipe_create(ch, pipename, POOLSIZE, sizeof(AVPicture))) == NULL) {
+	if((pipe = dpipe_create(ch, pipename, POOLSIZE, sizeof(AVFrame))) == NULL) {
 		rtsperror("ga-client: cannot create pipeline.\n");
 		exit(-1);
 	}
 	for(data = pipe->in; data != NULL; data = data->next) {
-		bzero(data->pointer, sizeof(AVPicture));
-		if(avpicture_alloc((AVPicture*) data->pointer, AV_PIX_FMT_YUV420P, w, h) != 0) {
+		bzero(data->pointer, sizeof(AVFrame));
+		//if(avpicture_alloc((AVFrame*) data->pointer, AV_PIX_FMT_YUV420P, w, h) != 0) {
+		
+		if(av_image_alloc(
+
+                                ((AVFrame *)data->pointer)->data,
+                                ((AVFrame *)data->pointer)->linesize
+                                , w, h,AV_PIX_FMT_YUV420P,1) < 0) {
+
+
 			rtsperror("ga-client: per frame initialization failed.\n");
 			exit(-1);
 		}
@@ -341,11 +349,13 @@ render_text(SDL_Renderer *renderer, SDL_Window *window, int x, int y, int line, 
 	SDL_Texture *texture;
 	int ww, wh;
 	//
+	/*
 	if(window == NULL || renderer == NULL) {
 		rtsperror("render_text: Invalid window(%p) or renderer(%p) received.\n",
 			window, renderer);
 		return;
 	}
+	*/
 	//
 	SDL_GetWindowSize(window, &ww, &wh);
 	// centering X/Y?
@@ -381,7 +391,7 @@ render_text(SDL_Renderer *renderer, SDL_Window *window, int x, int y, int line, 
 static void
 render_image(struct RTSPThreadParam *rtspParam, int ch) {
 	dpipe_buffer_t *data;
-	AVPicture *vframe;
+	AVFrame *vframe;
 	SDL_Rect rect;
 #if 1	// only support SDL2
 	unsigned char *pixels;
@@ -391,7 +401,7 @@ render_image(struct RTSPThreadParam *rtspParam, int ch) {
 	if((data = dpipe_load_nowait(rtspParam->pipe[ch])) == NULL) {
 		return;
 	}
-	vframe = (AVPicture*) data->pointer;
+	vframe = (AVFrame*) data->pointer;
 	//
 #if 1	// only support SDL2
 	if(SDL_LockTexture(rtspParam->overlay[ch], NULL, (void**) &pixels, &pitch) == 0) {

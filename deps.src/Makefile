@@ -144,7 +144,7 @@ xvid:
 	rm -rf $(XVIDDIR)
 
 ffmpeg:
-	$(TBZUNPACK) $(FFMPEG)
+	$(TGZUNPACK) $(FFMPEG)
 	cd $(FFMPEGDIR); ./configure --prefix=$(GADEPS) \
 		--enable-shared --enable-pic \
 		--enable-libmp3lame \

@@ -107,7 +107,7 @@ aencoder_init(void *arg) {
 		encoder_sdp = avcodec_alloc_context3(rtspconf->audio_encoder_codec);
 		if(encoder_sdp == NULL)
 			goto init_failed;
-		encoder_sdp->flags |= CODEC_FLAG_GLOBAL_HEADER;
+		encoder_sdp->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 		if(encoder_sdp == NULL)
 			goto init_failed;
 		encoder_sdp = ga_avcodec_aencoder_init(encoder_sdp,
@@ -339,10 +339,16 @@ aencoder_threadproc(void *arg) {
 			pkt->data = buf;
 			pkt->size = bufsize;
 			got_packet = 0;
-			if(avcodec_encode_audio2(encoder, pkt, snd_in, &got_packet) != 0) {
+			//if(avcodec_encode_audio2(encoder, pkt, snd_in, &got_packet) != 0) {
+			//	ga_error("audio encoder: encoding failed, terminated\n");
+			//	goto audio_quit;
+			//}
+			if( avcodec_send_frame(encoder, snd_in) !=0){
 				ga_error("audio encoder: encoding failed, terminated\n");
 				goto audio_quit;
 			}
+
+
 			if(got_packet == 0/* || encoder->coded_frame == NULL*/)
 				goto drop_audio_frame;
 			// pts rescale is done in encoder_send_packet

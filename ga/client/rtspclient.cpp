@@ -135,6 +135,24 @@ static int packet_queue_limit = 5;	// limit the queue size
 static int packet_queue_dropfactor = 2;	// default drop half
 static PacketQueue audioq;
 
+typedef struct Decoder {
+    AVPacket *pkt;
+    PacketQueue *queue;
+    AVCodecContext *avctx;
+    int pkt_serial;
+    int finished;
+    int packet_pending;
+    SDL_cond *empty_queue_cond;
+    int64_t start_pts;
+    AVRational start_pts_tb;
+    int64_t next_pts;
+    AVRational next_pts_tb;
+    SDL_Thread *decoder_tid;
+} Decoder;
+
+
+
+
 void
 packet_queue_init(PacketQueue *q) {
 	int val;
@@ -162,10 +180,10 @@ packet_queue_init(PacketQueue *q) {
 
 int
 packet_queue_put(PacketQueue *q, AVPacket *pkt) {
-	if(av_dup_packet(pkt) < 0) {
-		rtsperror("packet queue put failed\n");
-		return -1;
-	}
+//	if(av_dup_packet(pkt) < 0) {
+//		rtsperror("packet queue put failed\n");
+//		return -1;
+//	}
 	pthread_mutex_lock(&q->mutex);
 	q->queue.push_back(*pkt);
 	q->size += pkt->size;
@@ -373,9 +391,9 @@ init_vdecoder(int channel, const char *sprop) {
 		rtsperror("video decoder(%d): cannot allocate context\n", channel);
 		return -1;
 	}
-	if(codec->capabilities & CODEC_CAP_TRUNCATED) {
+	if(codec->capabilities & AV_CODEC_CAP_TRUNCATED) {
 		rtsperror("video decoder(%d): codec support truncated data\n", channel);
-		ctx->flags |= CODEC_FLAG_TRUNCATED;
+		ctx->flags |= AV_CODEC_FLAG_TRUNCATED;
 	}
 	if(sprop != NULL) {
 		if(decode_sprop(ctx, sprop) != NULL) {
@@ -756,190 +774,292 @@ drop_video_frame(int ch/*channel*/, unsigned char *buffer, int bufsize, struct t
 	return 0;
 }
 
-////
+
+//static void decode(AVCodecContext *dec_ctx, AVFrame *frame, AVPacket *pkt)
+//{
+//    //char buf[1024];
+//    int ret;
+//    ret = avcodec_send_packet(dec_ctx, pkt);
+//
+//    if (ret < 0) {
+//        rtsperror( "Error sending a packet for decoding\n");
+//        exit(1);
+//    }
+//    while (ret >= 0) {
+//        ret = avcodec_receive_frame(dec_ctx, frame);
+//        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+//            return;
+//        else if (ret < 0) {
+//            rtsperror( "Error during decoding\n");
+//            exit(1);
+//        }
+//    }
+//}
+//
+
+//static void decode(AVCodecContext *dec_ctx, AVFrame *frame, AVPacket *pkt)
+//{
+//    //char buf[1024];
+//    int ret=-1;
+//     
+//    while (ret!=0){
+//
+//    	ret = avcodec_send_packet(dec_ctx, pkt);
+//	if(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF){
+//	avcodec_receive_frame(dec_ctx, frame);
+//            return;
+//
+//	}
+//    }
+//    while (ret >= 0) {
+//        ret = avcodec_receive_frame(dec_ctx, frame);
+//        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+//            return;
+//        else if (ret < 0) {
+//            rtsperror( "Error during decoding\n");
+//            exit(1);
+//        }
+//    }
+//}
+//
+
+int 
+create_surface(int ch,union SDL_Event * evt){
+                                // create surface & bitmap for the first time
+                                pthread_mutex_lock(&rtspParam->surfaceMutex[ch]);
+
+			//	rtsperror("mutex locked \n");
+                                if(rtspParam->swsctx[ch] == NULL) {
+			//	rtsperror("test non existence surf  ok\n");
+                                        rtspParam->width[ch] = vframe[ch]->width;
+                                        rtspParam->height[ch] = vframe[ch]->height;
+                                        rtspParam->format[ch] = (AVPixelFormat) vframe[ch]->format;
+#ifdef ANDROID
+                                        create_overlay(ch, vframe[0]->width, vframe[0]->height, (AVPixelFormat) vframe[0]->format);
+#else
+                                        pthread_mutex_unlock(&rtspParam->surfaceMutex[ch]);
+			//	rtsperror("mutex unlocked \n");
+                                        bzero(evt, sizeof(SDL_Event*));
+			//	rtsperror("bzero evt \n");
+                                        evt->user.type = SDL_USEREVENT;
+                                        evt->user.timestamp = time(0);
+                                        evt->user.code = SDL_USEREVENT_CREATE_OVERLAY;
+                                        evt->user.data1 = rtspParam;
+                                        evt->user.data2 = (void*) ch;
+
+                                        SDL_PushEvent(evt);
+		//	rtsperror("sdl push event \n");
+                                        // skip the initial frame:
+                                        // for event handler to create/setup surfaces
+                                       return 1;
+#endif
+                                }
+
+				return 0;
+}
+static void
+render_frame(int ch,union SDL_Event * evt){			
+				bzero(evt, sizeof(SDL_Event*));
+                                evt->user.type = SDL_USEREVENT;
+                                evt->user.timestamp = time(0);
+                                evt->user.code = SDL_USEREVENT_RENDER_IMAGE;
+                                evt->user.data1 = rtspParam;
+                                evt->user.data2 = (void*) ch;
+                                SDL_PushEvent(evt);
+}
+
+static void
+count_frame_rate(int ch){
+	#ifdef COUNT_FRAME_RATE
+                                cf_frame[ch]++;
+                                if(cf_tv0[ch].tv_sec == 0) {
+                                        gettimeofday(&cf_tv0[ch], NULL);
+                                }
+                                if(cf_frame[ch] == COUNT_FRAME_RATE) {
+                                        gettimeofday(&cf_tv1[ch], NULL);
+                                        cf_interval[ch] = tvdiff_us(&cf_tv1[ch], &cf_tv0[ch]);
+                                        rtsperror("# %u.%06u player frame rate: decoder %d @ %.4f fps\n",
+                                        cf_tv1[ch].tv_sec,
+                                        cf_tv1[ch].tv_usec,
+                                        ch,
+                                        1000000.0 * cf_frame[ch] / cf_interval[ch]);
+                                        cf_tv0[ch] = cf_tv1[ch];
+                                        cf_frame[ch] = 0;
+                                }
+#endif
+}
+
+
+
+static int decode(AVCodecContext *dec_ctx, AVFrame *frame, AVPacket *pkt)
+{
+    int ret;
+
+    ret = avcodec_send_packet(dec_ctx, pkt);
+    if (ret < 0) {
+        fprintf(stderr, "Error sending a packet for decoding\n");
+	av_packet_unref(pkt);
+       
+    }
+
+    while (ret >= 0) {
+        ret = avcodec_receive_frame(dec_ctx, frame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF){
+            
+    }else if (ret < 0) {
+            fprintf(stderr, "Error during decoding\n");
+            exit(1);
+        }else{
+
+
+        /* the picture is allocated by the decoder. no need to
+           free it */
+	return 1;
+	}
+    avcodec_flush_buffers(dec_ctx);
+    }
+
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+static void
+do_scaling(int ch, AVFrame * dstframe ,struct timeval &ftv, unsigned fcount , dpipe_buffer_t *data  ){
+				
+				if(vframe[ch]->width  == rtspParam->width[ch]
+                                && vframe[ch]->height == rtspParam->height[ch]
+                                && vframe[ch]->format == rtspParam->format[ch]) {
+                                /* fast path? no lookup on converter */
+                                        sws_scale(rtspParam->swsctx[ch],
+                                        // source: decoded frame
+                                        vframe[ch]->data, vframe[ch]->linesize,
+                                        0, vframe[ch]->height,
+                                        // destination: texture
+                                        dstframe->data, dstframe->linesize);
+                                } else {
+                                /* slower path - need to lookup converter */
+                                        SwsContext *swsctx;
+                                        if((swsctx = create_frame_converter(
+                                                vframe[ch]->width,
+                                                vframe[ch]->height,
+                                                (AVPixelFormat) vframe[ch]->format,
+                                                rtspParam->width[ch],
+                                                rtspParam->height[ch],
+#ifdef ANDROID
+                                                PIX_FMT_RGB565
+#else
+                                                (AVPixelFormat) rtspParam->format[ch]
+#endif
+                                                )) == NULL) {
+                                                        ga_error("*** FATAL *** Create frame converter failed.\n");
+#ifdef ANDROID
+                                                        rtspParam->quitLive555 = 1;
+                                                return -1;
+#else
+                                                exit(-1);
+#endif
+                                        }
+                                        sws_scale(swsctx,
+                                        // source: decoded frame
+                                        vframe[ch]->data, vframe[ch]->linesize,
+                                        0, vframe[ch]->height,
+                                        // destination: texture
+                                        dstframe->data, dstframe->linesize);
+                                }
+
+
+
+                                if(ch==0 && savefp_yuv != NULL) {
+                                        ga_save_yuv420p(savefp_yuv, vframe[0]->width, vframe[0]->height, dstframe->data, dstframe->linesize);
+                                        if(savefp_yuvts != NULL) {
+                                                gettimeofday(&ftv, NULL);
+                                                ga_save_printf(savefp_yuvts, "Frame #%08d: %u.%06u\n", fcount++, ftv.tv_sec, ftv.tv_usec);
+                                        }
+                                }
+                                dpipe_store(rtspParam->pipe[ch], data);
+
+}
+
+
+
+
 
 static int
-play_video_priv(int ch/*channel*/, unsigned char *buffer, int bufsize, struct timeval pts) {
-	AVPacket avpkt;
-	int got_picture, len;
-#ifndef ANDROID
-	union SDL_Event evt;
-#endif
-	dpipe_buffer_t *data = NULL;
-	AVPicture *dstframe = NULL;
-	struct timeval ftv;
-	static unsigned fcount = 0;
-#ifdef PRINT_LATENCY
-	static struct timeval btv0 = {0, 0};
-	struct timeval ptv0, ptv1, btv1;
-	// measure buffering time
-	if(btv0.tv_sec == 0) {
-		gettimeofday(&btv0, NULL);
-	} else {
-		long long dt;
-		gettimeofday(&btv1, NULL);
-		dt = tvdiff_us(&btv1, &btv0);
-		if(dt < 2000000) {
-			ga_aggregated_print(0x8000, 599, dt);
-		}
-		btv0 = btv1;
-	}
-#endif
-	// drop the frame?
-	if(drop_video_frame(ch, buffer, bufsize, pts)) {
-		return bufsize;
-	}
-	//
-#ifdef SAVE_ENC
-	if(fout != NULL) {
-		fwrite(buffer, sizeof(char), bufsize, fout);
-	}
-#endif
-	//
-	av_init_packet(&avpkt);
-	avpkt.size = bufsize;
-	avpkt.data = buffer;
-#if 0	// XXX: dump nal units
-	do {
-		int codelen = 0;
-		unsigned char *ptr = NULL;
-		//
-		fprintf(stderr, "[XXX-nalcode]");
-		for(	ptr = ga_find_startcode(avpkt.data, avpkt.data+avpkt.size, &codelen);
-			ptr != NULL;
-			ptr = ga_find_startcode(ptr+codelen, avpkt.data+avpkt.size, &codelen)) {
-			//
-			fprintf(stderr, " (+%d|%d)-%02x", ptr-avpkt.data, codelen, ptr[codelen] & 0x1f);
-		}
-		fprintf(stderr, "\n");
-	} while(0);
-#endif
-	//
-	while(avpkt.size > 0) {
-		//
-#ifdef PRINT_LATENCY
-		gettimeofday(&ptv0, NULL);
-#endif
-		if((len = avcodec_decode_video2(vdecoder[ch], vframe[ch], &got_picture, &avpkt)) < 0) {
-			//rtsperror("decode video frame %d error\n", frame);
-			break;
-		}
-		if(got_picture) {
-#ifdef COUNT_FRAME_RATE
-			cf_frame[ch]++;
-			if(cf_tv0[ch].tv_sec == 0) {
-				gettimeofday(&cf_tv0[ch], NULL);
-			}
-			if(cf_frame[ch] == COUNT_FRAME_RATE) {
-				gettimeofday(&cf_tv1[ch], NULL);
-				cf_interval[ch] = tvdiff_us(&cf_tv1[ch], &cf_tv0[ch]);
-				rtsperror("# %u.%06u player frame rate: decoder %d @ %.4f fps\n",
-					cf_tv1[ch].tv_sec,
-					cf_tv1[ch].tv_usec,
-					ch,
-					1000000.0 * cf_frame[ch] / cf_interval[ch]);
-				cf_tv0[ch] = cf_tv1[ch];
-				cf_frame[ch] = 0;
-			}
-#endif
-			// create surface & bitmap for the first time
-			pthread_mutex_lock(&rtspParam->surfaceMutex[ch]);
-			if(rtspParam->swsctx[ch] == NULL) {
-				rtspParam->width[ch] = vframe[ch]->width;
-				rtspParam->height[ch] = vframe[ch]->height;
-				rtspParam->format[ch] = (AVPixelFormat) vframe[ch]->format;
-#ifdef ANDROID
-				create_overlay(ch, vframe[0]->width, vframe[0]->height, (AVPixelFormat) vframe[0]->format);
-#else
-				pthread_mutex_unlock(&rtspParam->surfaceMutex[ch]);
-				bzero(&evt, sizeof(evt));
-				evt.user.type = SDL_USEREVENT;
-				evt.user.timestamp = time(0);
-				evt.user.code = SDL_USEREVENT_CREATE_OVERLAY;
-				evt.user.data1 = rtspParam;
-				evt.user.data2 = (void*) ch;
-				SDL_PushEvent(&evt);
-				// skip the initial frame:
-				// for event handler to create/setup surfaces
-				goto skip_frame;
-#endif
-			}
-			pthread_mutex_unlock(&rtspParam->surfaceMutex[ch]);
-			// copy into pool
-			data = dpipe_get(rtspParam->pipe[ch]);
-			dstframe = (AVPicture*) data->pointer;
-			// do scaling
-			if(vframe[ch]->width  == rtspParam->width[ch]
-			&& vframe[ch]->height == rtspParam->height[ch]
-			&& vframe[ch]->format == rtspParam->format[ch]) {
-				/* fast path? no lookup on converter */
-				sws_scale(rtspParam->swsctx[ch],
-					// source: decoded frame
-					vframe[ch]->data, vframe[ch]->linesize,
-					0, vframe[ch]->height,
-					// destination: texture
-					dstframe->data, dstframe->linesize);
-			} else {
-				/* slower path - need to lookup converter */
-				SwsContext *swsctx;
-				if((swsctx = create_frame_converter(
-						vframe[ch]->width,
-						vframe[ch]->height,
-						(AVPixelFormat) vframe[ch]->format,
-						rtspParam->width[ch],
-						rtspParam->height[ch],
-#ifdef ANDROID
-						PIX_FMT_RGB565
-#else
-						(AVPixelFormat) rtspParam->format[ch]
-#endif
-						)) == NULL) {
-					ga_error("*** FATAL *** Create frame converter failed.\n");
-#ifdef ANDROID
-					rtspParam->quitLive555 = 1;
-					return -1;
-#else
-					exit(-1);
-#endif
-				}
-				sws_scale(swsctx,
-					// source: decoded frame
-					vframe[ch]->data, vframe[ch]->linesize,
-					0, vframe[ch]->height,
-					// destination: texture
-					dstframe->data, dstframe->linesize);
-			}
-			if(ch==0 && savefp_yuv != NULL) {
-				ga_save_yuv420p(savefp_yuv, vframe[0]->width, vframe[0]->height, dstframe->data, dstframe->linesize);
-				if(savefp_yuvts != NULL) {
-					gettimeofday(&ftv, NULL);
-					ga_save_printf(savefp_yuvts, "Frame #%08d: %u.%06u\n", fcount++, ftv.tv_sec, ftv.tv_usec);
-				}
-			}
-			dpipe_store(rtspParam->pipe[ch], data);
-			// request to render it
-#ifdef PRINT_LATENCY
-			gettimeofday(&ptv1, NULL);
-			ga_aggregated_print(0x8001, 601, tvdiff_us(&ptv1, &ptv0));
-#endif
-#ifdef ANDROID
-			requestRender(rtspParam->jnienv);
-#else
-			bzero(&evt, sizeof(evt));
-			evt.user.type = SDL_USEREVENT;
-			evt.user.timestamp = time(0);
-			evt.user.code = SDL_USEREVENT_RENDER_IMAGE;
-			evt.user.data1 = rtspParam;
-			evt.user.data2 = (void*) ch;
-			SDL_PushEvent(&evt);
-#endif
-		}
-skip_frame:
-		avpkt.size -= len;
-		avpkt.data += len;
-	}
-	return avpkt.size;
+play_video_priv(int ch,unsigned char *buffer, int bufsize, struct timeval pts) {
+AVPacket avpkt;
+int len;
+dpipe_buffer_t *data=NULL;
+AVFrame * dstframe=NULL;
+struct timeval ftv;
+static unsigned fcount = 0;
+     
+union SDL_Event evt;
+//
+//data = (dpipe_buffer_t *) malloc(sizeof(dpipe_buffer_t));
+
+
+// drop the frame?
+     if(drop_video_frame(ch, buffer, bufsize, pts)) {
+              return bufsize;
+     }
+     
+//
+
+av_init_packet(&avpkt);
+int got_picture=0;
+int ret = AVERROR(EAGAIN);
+avpkt.data=buffer;
+avpkt.size=bufsize;
+
+for (;;){
+if(decode (vdecoder[ch],vframe[ch],&avpkt)==1){
+
+		    count_frame_rate(ch);
+                              // create surface & bitmap for the first time
+//      rtsperror("create surface si jamais\n");
+                              if(create_surface(ch,&evt)==1){
+				//bzero(&data,sizeof(dpipe_buffer_t));
+				//bzero(&dstframe,sizeof(AVFrame));
+					goto next;
+			      }
+
+  //    rtsperror("assoc data si jamais\n");
+                                pthread_mutex_unlock(&rtspParam->surfaceMutex[ch]);
+
+                              data =  dpipe_get(rtspParam->pipe[ch]);
+    //  rtsperror("assoc dstframe si jamais\n");
+                             dstframe = (AVFrame*) data->pointer;
+
+
+
+      //rtsperror("scaling \n");
+                              do_scaling(ch,dstframe,ftv,fcount,data);
+
+                              // request to render it
+     // rtsperror("affichage \n");
+                              render_frame(ch,&evt);
+
+       			      av_packet_unref(&avpkt);     
+	return 0;	
+
 }
+next:
+	rtsperror("next \n");
+
+}   
+	return 0;	
+}
+
+
+
 
 #define	PRIVATE_BUFFER_SIZE	1048576
 
@@ -1106,10 +1226,23 @@ audio_buffer_decode(AVPacket *pkt, unsigned char *dstbuf, int dstlen) {
 		int datalen = 0;
 		//
 		av_frame_unref(aframe);
+	//	if((len = avcodec_receive_frame(adecoder, aframe)) < 0) {
+  	      if((len = avcodec_send_packet(adecoder, pkt)) < 0) {
+       	                 rtsperror("send packet to decoder %d error\n", len);
+       	 }
+       // if((len = avcodec_send_packet(adecoder, pkt)) < 0) {
+                if((len = avcodec_receive_frame(adecoder, aframe)) < 0) {
+                        rtsperror("audio video frame %d error\n", len);
+
+                }
+
+
+/*
 		if((len = avcodec_decode_audio4(adecoder, aframe, &got_frame, pkt)) < 0) {
 			rtsperror("decode audio failed.\n");
 			return -1;
 		}
+		*/
 		if(got_frame == 0) {
 			pkt->size -= len;
 			pkt->data += len;
@@ -1212,7 +1345,7 @@ audio_buffer_decode(AVPacket *pkt, unsigned char *dstbuf, int dstlen) {
 	}
 	pkt->data = saveptr;
 	if(pkt->data)
-		av_free_packet(pkt);
+		av_packet_unref(pkt);
 	return filled;
 }
 
