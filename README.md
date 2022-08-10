@@ -37,24 +37,41 @@ can be ported to other OS's including OS X and Android.
 		libpulse-dev libasound2-dev lib32z1
   ```
 * Modify the file env-setup, the GADEPS setting must be the absolute path to the cloned project plus /deps.posix at the end.
+  
   Next type:
-  source env-setup
+  
+ ```source env-setup```
+ 
   Next :
-  cd deps.src
-  make
+  
+  ``` cd deps.src```
+  
+  ``` make```
+  
   Next:
-  cd ../ga
-  make
-  And finally you will have the linux binaries in <clone of ga project>/bin directory
+  
+  ``` cd ../ga```
+  
+  ``` make```
+  
+  And finally you will have the linux binaries in "clone of ga project"/bin directory
+
 
 *Usage:
+  
   on the server:
-  copy <clone of ga project>/bin on it
-  ./ga-server-periodic conf/server.desktop.conf
+  
+  ``` copy "clone of ga project"/bin on it```
+  
+  ``` ./ga-server-periodic conf/server.desktop.conf```
+  
   
   on the client:
-  copy <clone of ga project>/bin on it
-  ./ga-client conf/client.abs.conf rtsp://<ip of the server>:8554/desktop
+  
+  ```copy "clone of ga project"/bin on it```
+  
+  ```./ga-client conf/client.abs.conf rtsp://"ip of the server":8554/desktop```
+  
   
  
   
