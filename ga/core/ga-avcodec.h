@@ -26,6 +26,9 @@ extern "C" {
 #include <libswresample/swresample.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/avutil.h>
+#include <libavutil/fifo.h>
 #include <libavutil/base64.h>
 #ifdef __cplusplus
 }

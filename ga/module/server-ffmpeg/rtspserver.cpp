@@ -349,7 +349,7 @@ per_client_init(RTSPContext *ctx) {
 	int i;
 	AVOutputFormat *fmt;
 	//
-	if((fmt = av_guess_format("rtp", NULL, NULL)) == NULL) {
+	if((fmt = (AVOutputFormat *)av_guess_format("rtp", NULL, NULL)) == NULL) {
 		ga_error("RTP not supported.\n");
 		return -1;
 	}
@@ -369,7 +369,7 @@ per_client_init(RTSPContext *ctx) {
 			return -1;
 		}
 		if((ctx->sdp_vencoder[i] = ga_avcodec_vencoder_init(
-			ctx->sdp_vstream[i]->codec,
+			ctx->sdp_vencoder[i],
 			rtspconf->video_encoder_codec,
 			video_source_out_width(i), video_source_out_height(i),
 			rtspconf->video_fps,
@@ -390,7 +390,7 @@ per_client_init(RTSPContext *ctx) {
 		return -1;
 	}
 	if((ctx->sdp_aencoder = ga_avcodec_aencoder_init(
-			ctx->sdp_astream->codec,
+			ctx->sdp_aencoder,
 			rtspconf->audio_encoder_codec,
 			rtspconf->audio_bitrate,
 			rtspconf->audio_samplerate,
@@ -414,12 +414,48 @@ close_av(AVFormatContext *fctx, AVStream *st, AVCodecContext *cctx, enum RTSPLow
 	if(cctx) {
 		ga_avcodec_close(cctx);
 	}
-	if(st && st->codec != NULL) {
+
+	const AVCodec * tmpcodec = avcodec_find_decoder(st->codecpar->codec_id);
+        AVCodecContext * tmpcodeccontext = avcodec_alloc_context3(tmpcodec);
+	if(st && tmpcodec != NULL) {
+                if( tmpcodeccontext != cctx) {
+                        ga_avcodec_close(tmpcodeccontext);
+                }
+                tmpcodec = NULL;
+        }
+
+
+
+/*
+	if(st && tmp != NULL) {
 		if(st->codec != cctx) {
 			ga_avcodec_close(st->codec);
 		}
 		st->codec = NULL;
 	}
+	*/
+	if(fctx) {
+                for(i = 0; i < fctx->nb_streams; i++) {
+
+                        AVCodec * tmp =(AVCodec *) avcodec_find_decoder(fctx->streams[i]->codecpar->codec_id);
+                        AVCodecContext * tmpcontext=avcodec_alloc_context3(tmp);
+
+
+                        if(cctx != tmpcontext) {
+                                if(tmp)
+                                        ga_avcodec_close(tmpcontext);
+                        } else {
+                                cctx = NULL;
+                        }
+                        av_freep(&tmp);
+                        if(st == fctx->streams[i])
+                                st = NULL;
+                        av_freep(&fctx->streams[i]);
+                }
+
+
+/*
+
 	if(fctx) {
 		for(i = 0; i < fctx->nb_streams; i++) {
 			if(cctx != fctx->streams[i]->codec) {
@@ -433,6 +469,7 @@ close_av(AVFormatContext *fctx, AVStream *st, AVCodecContext *cctx, enum RTSPLow
 				st = NULL;
 			av_freep(&fctx->streams[i]);
 		}
+		*/
 #ifdef HOLE_PUNCHING
 		// do nothing?
 #else
@@ -547,7 +584,7 @@ static int
 prepare_sdp_description(RTSPContext *ctx, char *buf, int bufsize) {
 	buf[0] = '\0';
 	av_dict_set(&ctx->sdp_fmtctx->metadata, "title", rtspconf->title, 0);
-	snprintf(ctx->sdp_fmtctx->filename, sizeof(ctx->sdp_fmtctx->filename), "rtp://0.0.0.0");
+	snprintf(ctx->sdp_fmtctx->url, sizeof(ctx->sdp_fmtctx->url), "rtp://0.0.0.0");
 	av_sdp_create(&ctx->sdp_fmtctx, 1, buf, bufsize);
 	return strlen(buf);
 }
@@ -633,7 +670,7 @@ rtp_new_av_stream(RTSPContext *ctx, struct sockaddr_in *sin, int streamid, enum 
 			streamid);
 		return -1;
 	}
-	if((fmt = av_guess_format("rtp", NULL, NULL)) == NULL) {
+	if((fmt = (AVOutputFormat *) av_guess_format("rtp", NULL, NULL)) == NULL) {
 		ga_error("RTP not supported.\n");
 		return -1;
 	}
@@ -696,7 +733,9 @@ rtp_new_av_stream(RTSPContext *ctx, struct sockaddr_in *sin, int streamid, enum 
 	//
 	if(codecid == rtspconf->video_encoder_codec->id) {
 		encoder = ga_avcodec_vencoder_init(
-				stream->codec,
+				//stream->codec,
+				avcodec_alloc_context3(
+                                avcodec_find_encoder(stream->codecpar->codec_id)),
 				rtspconf->video_encoder_codec,
 				video_source_out_width(streamid),
 				video_source_out_height(streamid),
@@ -704,7 +743,9 @@ rtp_new_av_stream(RTSPContext *ctx, struct sockaddr_in *sin, int streamid, enum 
 				rtspconf->vso);
 	} else if(codecid == rtspconf->audio_encoder_codec->id) {
 		encoder = ga_avcodec_aencoder_init(
-				stream->codec,
+				//stream->codec,
+				avcodec_alloc_context3(
+                                avcodec_find_encoder(stream->codecpar->codec_id)),
 				rtspconf->audio_encoder_codec,
 				rtspconf->audio_bitrate,
 				rtspconf->audio_samplerate,

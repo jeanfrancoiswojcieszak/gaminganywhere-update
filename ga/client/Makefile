@@ -2,11 +2,11 @@
 include ../Makefile.def
 
 CFLAGS	+= -I../core $(AVCCF) $(L5CF) $(SDLCF)
-LDFLAGS	= $(EXTRALDFLAGS) -L../core -lga $(AVCLD) $(SDLLD) $(L5LD) -Wl,-rpath,\$$ORIGIN
+LDFLAGS	= $(EXTRALDFLAGS) -L../core -lga  $(AVCLD) $(SDLLD) $(L5LD) -Wl,-rpath,\$$ORIGIN
 
 ifeq ($(OS), Linux)
 CFLAGS	+= $(X11CF)
-LDFLAGS	+= $(X11LD) -lrt -lpthread
+LDFLAGS	+= $(X11LD) -lrt -lpthread -lssl -lcrypto
 endif
 
 ifeq ($(OS), MSYS)

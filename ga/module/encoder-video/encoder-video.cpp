@@ -21,7 +21,7 @@
 #include "vsource.h"
 #include "rtspconf.h"
 #include "encoder-common.h"
-
+#include "string.h"
 #include "ga-common.h"
 #include "ga-avcodec.h"
 #include "ga-conf.h"
@@ -215,11 +215,13 @@ vencoder_reconfigure(int iid) {
 	return ret;
 }
 
+
 static void *
 vencoder_threadproc(void *arg) {
 	// arg is pointer to source pipename
 	int iid, outputW, outputH;
 	vsource_frame_t *frame = NULL;
+	//AVFrame *frame =NULL;
 	char *pipename = (char*) arg;
 	dpipe_t *pipe = dpipe_lookup(pipename);
 	dpipe_buffer_t *data = NULL;
@@ -265,13 +267,18 @@ vencoder_threadproc(void *arg) {
 	pic_in->width = outputW;
 	pic_in->height = outputH;
 	pic_in->format = AV_PIX_FMT_YUV420P;
-	pic_in_size = avpicture_get_size(AV_PIX_FMT_YUV420P, outputW, outputH);
+	//pic_in_size = avpicture_get_size(AV_PIX_FMT_YUV420P, outputW, outputH);
+	pic_in_size = av_image_get_buffer_size(AV_PIX_FMT_YUV420P, outputW, outputH,16);
 	if((pic_in_buf = (unsigned char*) av_malloc(pic_in_size)) == NULL) {
 		ga_error("video encoder: picture buffer allocation failed, terminated.\n");
 		goto video_quit;
 	}
-	avpicture_fill((AVPicture*) pic_in, pic_in_buf,
-			AV_PIX_FMT_YUV420P, outputW, outputH);
+	//avpicture_fill((AVFrame*) pic_in, pic_in_buf,
+	//		AV_PIX_FMT_YUV420P, outputW, outputH);
+	//
+	av_image_fill_arrays(pic_in->data,pic_in->linesize,pic_in_buf,
+                        AV_PIX_FMT_YUV420P, outputW, outputH,1);
+			
 	//ga_error("video encoder: linesize = %d|%d|%d\n", pic_in->linesize[0], pic_in->linesize[1], pic_in->linesize[2]);
 	// start encoding
 	ga_error("video encoding started: tid=%ld %dx%d@%dfps, nalbuf_size=%d, pic_in_size=%d.\n",
@@ -283,7 +290,7 @@ vencoder_threadproc(void *arg) {
 		// Reconfigure encoder (if required)
 		vencoder_reconfigure(iid);
 		AVPacket pkt;
-		int got_packet = 0;
+		int got_packet=0;
 		// wait for notification
 		struct timeval tv;
 		struct timespec to;
@@ -295,7 +302,17 @@ vencoder_threadproc(void *arg) {
 			ga_error("viedo encoder: image source timed out.\n");
 			continue;
 		}
-		frame = (vsource_frame_t*) data->pointer;
+		//frame = (vsource_frame_t*) data->pointer;
+		//vsource_frame_t * frame=(vsource_frame_t*) data->pointer;
+		frame=(vsource_frame_t*) data->pointer;
+		
+		/*
+
+
+		*/	
+		//	frame = (AVFrame *) data->pointer;
+
+
 		// handle pts
 		if(basePts == -1LL) {
 			basePts = frame->imgpts;
@@ -316,7 +333,8 @@ vencoder_threadproc(void *arg) {
 			dpipe_put(pipe, data);
 			goto video_quit;
 		}
-		tv = frame->timestamp;
+		
+		tv = frame->timestamp ;
 		dpipe_put(pipe, data);
 		// pts must be monotonically increasing
 		if(newpts > pts) {
@@ -328,60 +346,67 @@ vencoder_threadproc(void *arg) {
 		encoder_pts_put(iid, pts, &tv);
 		pic_in->pts = pts;
 		av_init_packet(&pkt);
-		pkt.data = nalbuf_a;
-		pkt.size = nalbuf_size;
-		if(avcodec_encode_video2(encoder, &pkt, pic_in, &got_packet) < 0) {
+                pkt.data = nalbuf_a;
+                pkt.size = nalbuf_size;
+		/*if(avcodec_encode_video2(encoder, &pkt, pic_in, &got_packet) < 0) {
 			ga_error("video encoder: encode failed, terminated.\n");
 			goto video_quit;
 		}
-		if(got_packet) {
-			if(pkt.pts == (int64_t) AV_NOPTS_VALUE) {
-				pkt.pts = pts;
-			}
-			pkt.stream_index = 0;
-#if 0			// XXX: dump naltype
-			do {
-				int codelen;
-				unsigned char *ptr;
-				fprintf(stderr, "[XXX-naldump]");
-				for(	ptr = ga_find_startcode(pkt.data, pkt.data+pkt.size, &codelen);
-					ptr != NULL;
-					ptr = ga_find_startcode(ptr+codelen, pkt.data+pkt.size, &codelen)) {
-					//
-					fprintf(stderr, " (+%d|%d)-%02x", ptr-pkt.data, codelen, ptr[codelen] & 0x1f);
-				}
-				fprintf(stderr, "\n");
-			} while(0);
-#endif
-			//
-			if(pkt.pts != AV_NOPTS_VALUE) {
-				if(encoder_ptv_get(iid, pkt.pts, &tv, 0) == NULL) {
-					gettimeofday(&tv, NULL);
-				}
-			} else {
-				gettimeofday(&tv, NULL);
-			}
-			// send the packet
-			if(encoder_send_packet("video-encoder",
-				iid/*rtspconf->video_id*/, &pkt,
-				pkt.pts, &tv) < 0) {
-				goto video_quit;
-			}
-			// free unused side-data
-			if(pkt.side_data_elems > 0) {
-				int i;
-				for (i = 0; i < pkt.side_data_elems; i++)
-					av_free(pkt.side_data[i].data);
-				av_freep(&pkt.side_data);
-				pkt.side_data_elems = 0;
-			}
-			//
-			if(video_written == 0) {
-				video_written = 1;
-				ga_error("first video frame written (pts=%lld)\n", pts);
-			}
+		*/
+
+
+	//	AVFrame * fframe=av_frame_alloc();
+		//convertir frame (vsource_frame_s) en AVFrame;
+		//
+		//fframe.pts=frame.imgpts;
+		//fframe.
+		//pthread_mutex_lock(&condMutex);
+		//fframe=convert_vsource_frame_to_AVFrame(frame);
+
+		int ret=avcodec_send_frame(encoder,pic_in);
+
+		char * errorstr=(char *)malloc(255);
+		av_strerror(ret,errorstr,255);
+		if(ret < 0) {
+                        ga_error("video encoder: encode failed, terminated code:%s.\n",errorstr);
+                        goto video_quit;
+                }
+		ret=avcodec_receive_packet (encoder,&pkt);
+		av_strerror(ret,errorstr,255);
+                if(ret < 0) {
+                        ga_error("video encoder: receive from encoder failed code:%s.\n",errorstr);
+                        goto video_quit;
+                }
+		if(pkt.pts != AV_NOPTS_VALUE) {
+                      if(encoder_ptv_get(iid, pkt.pts, &tv, 0) == NULL) {
+                                      gettimeofday(&tv, NULL);
+                       }
+                 } else {
+                              gettimeofday(&tv, NULL);
+                        }
+                         //send the packet
+                        if(encoder_send_packet("video-encoder",
+                              iid/*rtspconf->video_id*/, &pkt,
+                              pkt.pts, &tv) < 0) {
+                              goto video_quit;
+                        }
+                         //free unused side-data
+                        if(pkt.side_data_elems > 0) {
+                              int i;
+                              for (i = 0; i < pkt.side_data_elems; i++)
+                                      av_free(pkt.side_data[i].data);
+                              av_freep(&pkt.side_data);
+                              pkt.side_data_elems = 0;
+                        }
+		if(video_written == 0) {
+                                video_written = 1;
+                                ga_error("first video frame written (pts=%lld)\n", pts);
+                        }
+
 		}
-	}
+
+
+	
 	//
 video_quit:
 	if(pipe) {

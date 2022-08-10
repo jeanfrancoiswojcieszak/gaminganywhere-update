@@ -48,23 +48,23 @@ ga_format_init(const char *filename) {
 	AVOutputFormat *fmt;
 	AVFormatContext *ctx;
 	//
-	if((fmt = av_guess_format(NULL, filename, NULL)) == NULL) {
-		if((fmt = av_guess_format("mkv", NULL, NULL)) == NULL) {
+	if((fmt = (AVOutputFormat *)av_guess_format(NULL, filename, NULL)) == NULL) {
+		if((fmt = (AVOutputFormat *)av_guess_format("mkv", NULL, NULL)) == NULL) {
 			fprintf(stderr, "# cannot find suitable format.\n");
 			return NULL;
 		}
 	}
-	if((ctx = avformat_alloc_context()) == NULL) {
+	if((ctx = (AVFormatContext *)avformat_alloc_context()) == NULL) {
 		fprintf(stderr, "# create avformat context failed.\n");
 		return NULL;
 	}
 	//
 	ctx->oformat = fmt;
-	snprintf(ctx->filename, sizeof(ctx->filename), "%s", filename);
+	snprintf(ctx->url, sizeof(ctx->url), "%s", filename);
 	//
 	if((fmt->flags & AVFMT_NOFILE) == 0) {
-		if(avio_open(&ctx->pb, ctx->filename, AVIO_FLAG_WRITE) < 0) {
-			fprintf(stderr, "# cannot create file '%s'\n", ctx->filename);
+		if(avio_open(&ctx->pb, ctx->url, AVIO_FLAG_WRITE) < 0) {
+			fprintf(stderr, "# cannot create file '%s'\n", ctx->url);
 			return NULL;
 		}
 	}
@@ -77,21 +77,21 @@ ga_rtp_init(const char *url) {
 	AVOutputFormat *fmt;
 	AVFormatContext *ctx;
 	//
-	if((fmt = av_guess_format("rtp", NULL, NULL)) == NULL) {
+	if((fmt = (AVOutputFormat *) av_guess_format("rtp", NULL, NULL)) == NULL) {
 		fprintf(stderr, "# rtp is not supported.\n");
 		return NULL;
 	}
-	if((ctx = avformat_alloc_context()) == NULL) {
+	if((ctx = (AVFormatContext *) avformat_alloc_context()) == NULL) {
 		fprintf(stderr, "# create avformat context failed.\n");
 		return NULL;
 	}
 	//
 	ctx->oformat = fmt;
-	snprintf(ctx->filename, sizeof(ctx->filename), "%s", url);
+	snprintf(ctx->url, sizeof(ctx->url), "%s", url);
 	//
 	//if((fmt->flags & AVFMT_NOFILE) == 0) {
-		if(avio_open(&ctx->pb, ctx->filename, AVIO_FLAG_WRITE) < 0) {
-			fprintf(stderr, "# cannot create file '%s'\n", ctx->filename);
+		if(avio_open(&ctx->pb, ctx->url, AVIO_FLAG_WRITE) < 0) {
+			fprintf(stderr, "# cannot create file '%s'\n", ctx->url);
 			return NULL;
 		}
 	//}
@@ -110,11 +110,14 @@ ga_avformat_new_stream(AVFormatContext *ctx, int id, AVCodec *codec) {
 	st->id = id;
 	//
 	if(ctx->flags & AVFMT_GLOBALHEADER) {
-		st->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+		//st->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+		//AVCodec * tmpcodec=avcodec_find_encoder(st->codecpar->codec_id);
+		//AVCodecContext * tmpctx = avcodec_alloc_context3(tmpcodec);
+		ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 	}
 	// some codec will need GLOBAL_HEADER to generate ctx->extradata!
 	if(codec->id == AV_CODEC_ID_H264 || codec->id == AV_CODEC_ID_AAC) {
-		st->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+		ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 	}
 	return st;
 }
@@ -124,13 +127,13 @@ ga_avcodec_find_encoder(const char **names, enum AVCodecID cid) {
 	AVCodec *codec = NULL;
 	if(names != NULL) {
 		while(*names != NULL) {
-			if((codec = avcodec_find_encoder_by_name(*names)) != NULL)
+			if((codec = (AVCodec *)avcodec_find_encoder_by_name(*names)) != NULL)
 				return codec;
 			names++;
 		}
 	}
 	if(cid != AV_CODEC_ID_NONE)
-		return avcodec_find_encoder(cid);
+		return (AVCodec *)avcodec_find_encoder(cid);
 	return NULL;
 }
 
@@ -139,13 +142,13 @@ ga_avcodec_find_decoder(const char **names, enum AVCodecID cid) {
 	AVCodec *codec = NULL;
 	if(names != NULL) {
 		while(*names != NULL) {
-			if((codec = avcodec_find_decoder_by_name(*names)) != NULL)
+			if((codec = (AVCodec *)avcodec_find_decoder_by_name(*names)) != NULL)
 				return codec;
 			names++;
 		}
 	}
 	if(cid != AV_CODEC_ID_NONE)
-		return avcodec_find_decoder(cid);
+		return (AVCodec *) avcodec_find_decoder(cid);
 	return NULL;
 }
 
@@ -157,7 +160,7 @@ ga_avcodec_vencoder_init(AVCodecContext *ctx, AVCodec *codec, int width, int hei
 		return NULL;
 	}
 	if(ctx == NULL) {
-		if((ctx = avcodec_alloc_context3(codec)) == NULL) {
+		if((ctx = (AVCodecContext *)avcodec_alloc_context3(codec)) == NULL) {
 			return NULL;
 		}
 	}
@@ -165,7 +168,7 @@ ga_avcodec_vencoder_init(AVCodecContext *ctx, AVCodec *codec, int width, int hei
 	/* always enable GLOBAL HEADER
 	 * - required header should be passed via something like
 	 * - sprop-parameter-sets in SDP descriptions */
-	ctx->flags |= CODEC_FLAG_GLOBAL_HEADER;
+	ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 #ifdef WIN32
 	ctx->time_base.num = 1;
 	ctx->time_base.den = fps;

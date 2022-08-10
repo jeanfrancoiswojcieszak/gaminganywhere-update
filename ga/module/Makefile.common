@@ -5,7 +5,7 @@ EXT		= so
 CFLAGS		+= -I../../core -DGA_MODULE $(AVCCF) $(L5CF) $(SDLCF)
 
 ifeq ($(strip $(GA_ANDROID)),)
-LDFLAGS		= #-L../../core -lga #$(AVCLD) $(SDLLD)
+LDFLAGS		= #-L../../core -lga -lssl -lcrypto #$(AVCLD) $(SDLLD)
 else
 LDFLAGS		= --sysroot=$(SYSROOT)
 endif

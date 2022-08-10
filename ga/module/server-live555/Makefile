@@ -2,10 +2,10 @@
 include ../Makefile.common
 
 CFLAGS	+= -I$(GADEPS)/include/live555
-LDFLAGS	+= -L$(GADEPS)/lib -lliveMedia -lBasicUsageEnvironment -lUsageEnvironment -lgroupsock
+LDFLAGS	+= -L$(GADEPS)/lib -lliveMedia -lBasicUsageEnvironment -lUsageEnvironment -lgroupsock -lssl -lcrypto
 
 ifeq ($(OS), MSYS)
-LDFLAGS	+= ../../core/libga.dll -lws2_32
+LDFLAGS	+= ../../core/libga.dll -lws2_32 
 endif
 
 OBJS	= server-live555.o ga-liveserver.o ga-mediasubsession.o ga-qossink.o \

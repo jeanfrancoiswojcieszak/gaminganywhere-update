@@ -300,7 +300,7 @@ winsock_init() {
 EXPORT
 void
 ga_dump_codecs() {
-	int n, count;
+	/*int n, count;
 	char buf[8192], *ptr;
 	AVCodec *c = NULL;
 	n = snprintf(buf, sizeof(buf), "Registered codecs: ");
@@ -313,7 +313,7 @@ ga_dump_codecs() {
 		count++;
 	}
 	snprintf(ptr, sizeof(buf)-(ptr-buf), "(%d)\n", count);
-	ga_error(buf);
+	ga_error(buf);*/
 	return;
 }
 
@@ -330,8 +330,8 @@ ga_init(const char *config, const char *url) {
 	srand(time(0));
 	winsock_init();
 #ifndef ANDROID_NO_FFMPEG
-	av_register_all();
-	avcodec_register_all();
+	//av_register_all();
+	//avcodec_register_all();
 	avformat_network_init();
 	//ga_dump_codecs();
 #endif
