@@ -61,14 +61,30 @@ can be ported to other OS's including OS X and Android.
   
   on the server:
   
-  ``` copy "clone of ga project"/bin on it```
+  ``` copy "clone of ga project"/bin  and "clone of ga project"/deps.posix on it```
+
+  ``` configure ld to search in deps.posix/lib (as root) :```
   
+  ``` echo "<absolute path to deps.posix directory>" > /etc/ld.so.conf.d/ga.conf```
+  
+  ```ldconfig```
+  
+  as a normal user:
+
   ``` ./ga-server-periodic conf/server.desktop.conf```
   
   
   on the client:
   
-  ```copy "clone of ga project"/bin on it```
+  ```copy "clone of ga project"/bin and "clone of ga project"/deps.posix on it```
+  
+  ``` configure ld to search in deps.posix/lib (as root):```
+  
+  ``` echo "<absolute path to deps.posix directory>" > /etc/ld.so.conf.d/ga.conf```
+  
+  ```ldconfig```
+  
+  as a user that is normal:
   
   ```./ga-client conf/client.abs.conf rtsp://"ip of the server":8554/desktop```
   
