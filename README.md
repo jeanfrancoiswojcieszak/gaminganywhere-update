@@ -34,7 +34,7 @@ can be ported to other OS's including OS X and Android.
   apt-get  install patch make cmake g++ pkg-config \
 		libx11-dev libxext-dev libxtst-dev libfreetype6-dev \
 		libgl1-mesa-dev libglu1-mesa-dev \
-		libpulse-dev libasound2-dev lib32z1 libssl-dev
+		libpulse-dev libasound2-dev lib32z1 libssl-dev libxtst-dev
   ```
 * Modify the file env-setup, the GADEPS setting must be the absolute path to the cloned project plus /deps.posix at the end.
   
