@@ -65,7 +65,7 @@ can be ported to other OS's including OS X and Android.
 
   ``` configure ld to search in deps.posix/lib (as root) :```
   
-  ``` echo "<absolute path to deps.posix directory>" > /etc/ld.so.conf.d/ga.conf```
+  ``` echo "<absolute path to deps.posix directory>/lib" > /etc/ld.so.conf.d/ga.conf```
   
   ```ldconfig```
   
@@ -80,7 +80,7 @@ can be ported to other OS's including OS X and Android.
   
   ``` configure ld to search in deps.posix/lib (as root):```
   
-  ``` echo "<absolute path to deps.posix directory>" > /etc/ld.so.conf.d/ga.conf```
+  ``` echo "<absolute path to deps.posix directory>/lib" > /etc/ld.so.conf.d/ga.conf```
   
   ```ldconfig```
   
